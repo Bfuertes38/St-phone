@@ -12092,3 +12092,9 @@ textarea.et-mem-save-snippet-edit::placeholder {
 .et-phone-transcript div { padding:6px 2px 2px; white-space:pre-wrap; overflow-wrap:anywhere; }
 .et-phone-no-transcript { font-size:.78rem; opacity:.7; }
 .et-phone-audio-player { display:block; width:100%; max-width:290px; }
+
+
+/* Generate a character voice note with the configured SillyTavern TTS voice */
+.et-phone-create-voice { display:inline-flex; align-items:center; gap:5px; border:1px solid var(--et-border,rgba(255,255,255,.16)); border-radius:16px; padding:5px 8px; background:rgba(255,255,255,.06); color:inherit; font-size:.72rem; cursor:pointer; }
+.et-phone-create-voice:disabled { opacity:.55; cursor:wait; }
+.et-phone-voice-loading i { animation:et-phone-record-pulse 1s infinite; }
