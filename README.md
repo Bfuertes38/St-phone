@@ -38,6 +38,11 @@ It lives as a draggable, resizable panel floating over SillyTavern. Text a diffe
 
 ## Updates
 
+**v1.3.4-storysync.0**:
+* Improved event-message state isolation per RP chat and excluded the user's own persona name from automatic NPC discovery.
+* Synced the Story Sync event-message toggle and cooldown controls with saved settings.
+
+
 **v1.3.3-storysync.0**:
 * Added settings to enable/disable witnessed-event messages and control their cooldown.
 * Story Sync privacy settings now present strict witnessed-only behavior, and the Phone → RP description reflects per-character thread isolation.
