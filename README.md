@@ -38,6 +38,11 @@ It lives as a draggable, resizable panel floating over SillyTavern. Text a diffe
 
 ## Updates
 
+**v1.3.2-storysync.0**:
+* Added story-event-driven incoming messages for contacts who witnessed a new roleplay event and already have a phone conversation.
+* Added per-contact event deduplication, cooldowns, and a no-message decision when texting would feel unnatural.
+
+
 **v1.3.1-storysync.0**:
 * Uploaded photos can now be passed as image content to vision-capable OpenAI-compatible and Ollama phone backends.
 * Added inline photo previews and best-effort PDF/DOCX text extraction when the relevant browser libraries are available.
