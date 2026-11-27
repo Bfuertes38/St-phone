@@ -4763,6 +4763,41 @@
         }
     }
 
+
+    async function etRunPhoneDiagnostics() {
+        const results = [
+            ['Secure connection', window.isSecureContext ? 'Available' : 'Required for microphone access'],
+            ['MediaRecorder', window.MediaRecorder ? 'Supported' : 'Not supported'],
+            ['Speech recognition', (window.SpeechRecognition || window.webkitSpeechRecognition) ? 'Supported' : 'Not available; voice notes still record'],
+            ['IndexedDB storage', window.indexedDB ? 'Available' : 'Not available'],
+            ['SillyTavern TTS events', (SillyTavern.getContext().event_types || {}).TTS_AUDIO_READY ? 'Detected' : 'Not detected']
+        ];
+        let microphone = 'Not tested';
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                stream.getTracks().forEach(track => track.stop());
+                microphone = 'Permission granted';
+            } catch (err) {
+                microphone = err.name === 'NotAllowedError' ? 'Permission denied' : (err.message || 'Unavailable');
+            }
+        } else {
+            microphone = 'Browser API unavailable';
+        }
+        results.push(['Microphone', microphone]);
+        const modal = document.getElementById('et-phone-contacts-modal');
+        if (!modal) return;
+        let report = modal.querySelector('.et-phone-diagnostics');
+        if (!report) {
+            report = document.createElement('div');
+            report.className = 'et-phone-diagnostics';
+            modal.querySelector('.et-phone-contacts-card').appendChild(report);
+        }
+        report.innerHTML = '<strong>Phone compatibility check</strong>' + results.map(row =>
+            '<div><span>' + escapeHtml(row[0]) + '</span><b>' + escapeHtml(row[1]) + '</b></div>'
+        ).join('');
+    }
+
     function openPhoneContacts() {
         ensurePhoneContactSettings();
         jQuery('#et-phone-contacts-modal').remove();
@@ -4770,11 +4805,12 @@
             '<div class="et-phone-contacts-card"><div class="et-phone-contacts-head"><strong>Contacts</strong><button type="button" class="et-phone-contacts-close">×</button></div>' +
             '<input type="search" id="et-phone-contacts-search" placeholder="Search contacts…">' +
             '<div id="et-phone-contacts-list" class="et-phone-contacts-list"></div>' +
-            '<div class="et-phone-contacts-actions"><button type="button" id="et-phone-contact-add">Add NPC contact</button><button type="button" id="et-phone-contact-hidden-toggle">Show removed contacts</button></div>' +
+            '<div class="et-phone-contacts-actions"><button type="button" id="et-phone-contact-add">Add NPC contact</button><button type="button" id="et-phone-contact-hidden-toggle">Show removed contacts</button><button type="button" id="et-phone-diagnostics">Check phone support</button></div>' +
             '<div id="et-phone-contact-hidden-wrap" hidden><div class="et-phone-contacts-subhead">Removed contacts</div><div id="et-phone-contacts-hidden-list" class="et-phone-contacts-list"></div></div></div></div>');
         jQuery('#et-panel').append(modal);
         renderPhoneContactRows('', false);
         modal.on('click', '.et-phone-contacts-close', () => modal.remove());
+        modal.on('click', '#et-phone-diagnostics', () => etRunPhoneDiagnostics());
         modal.on('click', function (event) { if (event.target === modal[0]) modal.remove(); });
         modal.on('input', '#et-phone-contacts-search', function () {
             renderPhoneContactRows(this.value, false); renderPhoneContactRows(this.value, true);
@@ -5526,8 +5562,10 @@
     async function etTogglePhoneRecording() {
         const button = document.getElementById('et-phone-record'), status = document.getElementById('et-phone-record-status');
         if (etPhoneRecorder && etPhoneRecorder.state === 'recording') {
-            etPhoneRecorder.stop(); try { if (etPhoneRecognition) etPhoneRecognition.stop(); } catch (_) {}
-            etPhoneRecognition = null; if (status) status.textContent = 'Saving voice note…'; return;
+            etPhoneRecorder.stop();
+            try { if (etPhoneRecognition) etPhoneRecognition.stop(); } catch (_) {}
+            if (status) status.textContent = 'Saving voice note…';
+            return;
         }
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) { toastr.warning('Voice recording requires microphone permission and a secure browser connection.'); return; }
         try {
@@ -5537,6 +5575,16 @@
             etPhoneChunks = []; etPhoneTranscript = ''; etPhoneStartedAt = Date.now();
             etPhoneRecorder.ondataavailable = event => { if (event.data && event.data.size) etPhoneChunks.push(event.data); };
             etPhoneRecorder.onstop = async () => {
+                // SpeechRecognition emits its final result asynchronously after stop().
+                // Give it a short grace period before freezing the transcript.
+                const recognition = etPhoneRecognition;
+                if (recognition) {
+                    await Promise.race([
+                        new Promise(resolve => recognition.addEventListener('end', resolve, { once: true })),
+                        new Promise(resolve => setTimeout(resolve, 1200))
+                    ]);
+                }
+                etPhoneRecognition = null;
                 if (etPhoneStream) etPhoneStream.getTracks().forEach(track => track.stop()); etPhoneStream = null;
                 const blob = new Blob(etPhoneChunks, { type: etPhoneRecorder ? etPhoneRecorder.mimeType : 'audio/webm' }); etPhoneRecorder = null;
                 if (!blob.size) return;
