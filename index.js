@@ -1538,6 +1538,8 @@
         if (selectedCharacterKey) {
             const selectedChar = pickerChars.find(char => char.__key === selectedCharacterKey);
             if (selectedChar) return selectedChar;
+            const npc = (settings.phoneNpcContacts || []).find(contact => contact && contact.__key === selectedCharacterKey);
+            if (npc) return npc;
         }
 
         const context = SillyTavern.getContext();
@@ -1558,7 +1560,7 @@
     function getCharacterKey() {
         const char = getCurrentCharacter();
         if (!char) return null;
-        return char.avatar || char.name || 'unknown';
+        return char.__key || char.avatar || char.name || 'unknown';
     }
 
     function getCharacterName() {
@@ -1568,7 +1570,9 @@
 
     function getCharacterByKey(characterKey) {
         if (!characterKey) return null;
-        return getAllCharactersForPicker().find(char => char.__key === characterKey) || null;
+        return getAllCharactersForPicker().find(char => char.__key === characterKey)
+            || (settings.phoneNpcContacts || []).find(contact => contact && contact.__key === characterKey)
+            || null;
     }
 
     function applySelectedCharacterToPanel() {
@@ -4595,6 +4599,141 @@
         }
     }
 
+
+    // PHONE CONTACTS — SillyTavern cast and witnessed story NPCs.
+    function ensurePhoneContactSettings() {
+        if (!Array.isArray(settings.phoneContactHidden)) settings.phoneContactHidden = [];
+        if (!Array.isArray(settings.phoneNpcContacts)) settings.phoneNpcContacts = [];
+    }
+    function phoneNpcKey(name) {
+        return 'npc:' + String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    }
+    function discoverPhoneNpcContacts() {
+        ensurePhoneContactSettings();
+        const context = SillyTavern.getContext();
+        const known = new Set(settings.phoneNpcContacts.map(c => String(c.name || '').toLowerCase()));
+        const cardNames = new Set(getAllCharactersForPicker().map(c => String(c.name || '').toLowerCase()));
+        const chat = Array.isArray(context.chat) ? context.chat : [];
+        let changed = false;
+        const addName = raw => {
+            const name = String(raw || '').replace(/[\u{1F300}-\u{1FAFF}]/gu, '').trim().replace(/\s+/g, ' ');
+            const normalized = name.toLowerCase();
+            if (!name || name.length > 60 || known.has(normalized) || cardNames.has(normalized)
+                || /^(none|nobody|no one|unknown|n\/a|na|user)$/i.test(name)) return;
+            settings.phoneNpcContacts.push({
+                __key: phoneNpcKey(name), name: name, avatar: '',
+                description: 'You are ' + name + ', a supporting character in the ongoing roleplay. Stay consistent with established events. You only know events you personally witnessed and information someone told you directly. Do not invent private conversations or knowledge you were not present for.',
+                personality: 'A supporting roleplay character. Develop a consistent voice from events and dialogue you personally witnessed.',
+                scenario: 'You are communicating with the user through a private phone conversation.',
+                mes_example: '', first_mes: ''
+            });
+            known.add(normalized); changed = true;
+        };
+        for (const message of chat) {
+            const text = String(message && message.mes || '');
+            for (const match of text.matchAll(/(?:👥\s*)?Present\s*:\s*([^\]\n\r]+)/gi)) {
+                match[1].split(/\s*(?:,|;|&|\band\b|\|)\s*/i).forEach(addName);
+            }
+        }
+        if (changed) saveSettings();
+    }
+    function getPhoneContactEntries() {
+        ensurePhoneContactSettings();
+        discoverPhoneNpcContacts();
+        const unique = new Map();
+        [...getAllCharactersForPicker(), ...settings.phoneNpcContacts].forEach(c => {
+            if (c && c.name && c.__key && !unique.has(c.__key)) unique.set(c.__key, c);
+        });
+        return [...unique.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    }
+    function renderPhoneContactRows(filter, hiddenMode) {
+        const list = document.getElementById(hiddenMode ? 'et-phone-contacts-hidden-list' : 'et-phone-contacts-list');
+        if (!list) return;
+        const query = String(filter || '').trim().toLowerCase();
+        const hidden = new Set(settings.phoneContactHidden || []);
+        const contacts = getPhoneContactEntries().filter(c =>
+            hidden.has(c.__key) === hiddenMode && (!query || c.name.toLowerCase().includes(query)));
+        if (!contacts.length) {
+            list.innerHTML = '<div class="et-phone-contacts-empty">' + (hiddenMode ? 'No removed contacts.' : 'No contacts match your search.') + '</div>';
+            return;
+        }
+        list.innerHTML = contacts.map(contact => {
+            const avatar = getAvatarUrlForCharacter(contact);
+            const initial = escapeHtml(String(contact.name).charAt(0).toUpperCase());
+            const avatarHtml = avatar
+                ? '<img class="et-phone-contact-avatar" src="' + escapeHtml(avatar) + '" alt="">'
+                : '<span class="et-phone-contact-avatar et-phone-contact-initial">' + initial + '</span>';
+            const label = String(contact.__key).startsWith('npc:') ? 'Story NPC' : 'Character card';
+            const actions = hiddenMode
+                ? '<button type="button" class="et-phone-contact-restore">Restore</button>'
+                : '<button type="button" class="et-phone-contact-message">Message</button><button type="button" class="et-phone-contact-hide" title="Remove contact" aria-label="Remove contact">×</button>';
+            return '<div class="et-phone-contact-row" data-contact-key="' + escapeHtml(contact.__key) + '">' +
+                avatarHtml + '<div class="et-phone-contact-info"><strong>' + escapeHtml(contact.name) +
+                '</strong><small>' + label + '</small></div>' + actions + '</div>';
+        }).join('');
+    }
+    function openPhoneContacts() {
+        ensurePhoneContactSettings();
+        jQuery('#et-phone-contacts-modal').remove();
+        const modal = jQuery('<div id="et-phone-contacts-modal" class="et-phone-contacts-modal">' +
+            '<div class="et-phone-contacts-card"><div class="et-phone-contacts-head"><strong>Contacts</strong><button type="button" class="et-phone-contacts-close">×</button></div>' +
+            '<input type="search" id="et-phone-contacts-search" placeholder="Search contacts…">' +
+            '<div id="et-phone-contacts-list" class="et-phone-contacts-list"></div>' +
+            '<div class="et-phone-contacts-actions"><button type="button" id="et-phone-contact-add">Add NPC contact</button><button type="button" id="et-phone-contact-hidden-toggle">Show removed contacts</button></div>' +
+            '<div id="et-phone-contact-hidden-wrap" hidden><div class="et-phone-contacts-subhead">Removed contacts</div><div id="et-phone-contacts-hidden-list" class="et-phone-contacts-list"></div></div></div></div>');
+        jQuery('#et-panel').append(modal);
+        renderPhoneContactRows('', false);
+        modal.on('click', '.et-phone-contacts-close', () => modal.remove());
+        modal.on('click', function (event) { if (event.target === modal[0]) modal.remove(); });
+        modal.on('input', '#et-phone-contacts-search', function () {
+            renderPhoneContactRows(this.value, false); renderPhoneContactRows(this.value, true);
+        });
+        modal.on('click', '#et-phone-contact-hidden-toggle', function () {
+            const wrap = modal.find('#et-phone-contact-hidden-wrap');
+            const show = wrap.prop('hidden'); wrap.prop('hidden', !show);
+            this.textContent = show ? 'Hide removed contacts' : 'Show removed contacts';
+            if (show) renderPhoneContactRows(modal.find('#et-phone-contacts-search').val(), true);
+        });
+        modal.on('click', '.et-phone-contact-hide', function () {
+            const key = jQuery(this).closest('.et-phone-contact-row').data('contact-key');
+            if (!settings.phoneContactHidden.includes(key)) settings.phoneContactHidden.push(key);
+            saveSettings(); renderPhoneContactRows(modal.find('#et-phone-contacts-search').val(), false);
+            renderPhoneContactRows(modal.find('#et-phone-contacts-search').val(), true);
+        });
+        modal.on('click', '.et-phone-contact-restore', function () {
+            const key = jQuery(this).closest('.et-phone-contact-row').data('contact-key');
+            settings.phoneContactHidden = settings.phoneContactHidden.filter(value => value !== key);
+            saveSettings(); renderPhoneContactRows(modal.find('#et-phone-contacts-search').val(), true);
+            renderPhoneContactRows(modal.find('#et-phone-contacts-search').val(), false);
+        });
+        modal.on('click', '.et-phone-contact-message', function () {
+            const key = jQuery(this).closest('.et-phone-contact-row').data('contact-key');
+            const contact = getPhoneContactEntries().find(c => c.__key === key);
+            if (!contact) return;
+            if (groupManager) groupManager.setOverrideGroupId(null);
+            selectedCharacterKey = key; settings.lastCharacterKey = key; saveSettings();
+            modal.remove(); applySelectedCharacterToPanel();
+        });
+        modal.on('click', '#et-phone-contact-add', function () {
+            const raw = prompt('Enter the NPC name:');
+            const name = String(raw || '').trim().replace(/\s+/g, ' ');
+            if (!name) return;
+            const existing = getPhoneContactEntries().find(c => c.name.toLowerCase() === name.toLowerCase());
+            if (existing) {
+                settings.phoneContactHidden = settings.phoneContactHidden.filter(key => key !== existing.__key);
+                saveSettings(); renderPhoneContactRows('', false); renderPhoneContactRows('', true); return;
+            }
+            settings.phoneNpcContacts.push({
+                __key: phoneNpcKey(name), name: name, avatar: '',
+                description: 'You are ' + name + ', a supporting character in the ongoing roleplay. Stay consistent with established events. You only know events you personally witnessed or were told directly. Do not invent knowledge of private conversations.',
+                personality: 'A supporting roleplay character whose voice should develop consistently from witnessed events and dialogue.',
+                scenario: 'You are communicating with the user through a private phone conversation.',
+                mes_example: '', first_mes: ''
+            });
+            saveSettings(); renderPhoneContactRows('', false);
+        });
+    }
+
     function buildPanelHtml() {
         const tethered = isTetheredMode();
         const inGroup = groupManager && groupManager.isGroupSession();
@@ -4633,6 +4772,7 @@
                     <div class="et-header-info">
                         <div class="et-char-name-row">
                             <div class="et-char-name" id="et-char-name" title="Select character">${escapeHtml(displayName)}<i class="fa-solid fa-chevron-down et-char-name-caret" aria-hidden="true"></i></div>
+                            <button type="button" class="et-phone-contacts-open" id="et-phone-contacts-open" title="Contacts"><i class="fa-solid fa-address-book"></i></button>
                         </div>
                         <div class="et-char-status-row${inGroup ? '' : ' et-panel-status-clickable'}" id="et-panel-status-trigger" title="Open details">
                             <div id="et-panel-status-content" class="et-panel-status-content"><span class="et-status-placeholder">Loading...</span></div>
@@ -4911,6 +5051,10 @@
         // ─────────────────────────────────────────────────────────
 
         // Character picker: click char name row (includes caret)
+        jQuery('#et-panel').on('click', '#et-phone-contacts-open', function (e) {
+            e.stopPropagation(); openPhoneContacts();
+        });
+
         jQuery('#et-char-name').on('click', function (e) {
             e.stopPropagation();
             jQuery('#et-emotion-popup').remove();
