@@ -6,7 +6,7 @@
 
 A [SillyTavern](https://github.com/SillyTavern/SillyTavern) extension that adds a floating, iMessage-style chat panel — a private side channel for casual, intimate conversations with any character, while your roleplay continues in the background.
 
-[![Version](https://img.shields.io/badge/version-1.2.5-blue.svg)](manifest.json)
+[![Version](https://img.shields.io/badge/version-1.3.5-blue.svg)](manifest.json)
 [![SillyTavern](https://img.shields.io/badge/SillyTavern-Extension-orange.svg)](https://github.com/SillyTavern/SillyTavern)
 
 </div>
@@ -37,6 +37,12 @@ It lives as a draggable, resizable panel floating over SillyTavern. Text a diffe
 ---
 
 ## Updates
+
+**v1.3.5-storysync.0**:
+* Added a phone compatibility check for secure-context, microphone, recording, transcription, IndexedDB, and SillyTavern TTS support.
+* Improved voice-note transcript finalization when browser speech recognition returns its final words asynchronously.
+* Preserved image attachments in combined-mode Ollama requests.
+
 
 **v1.3.4-storysync.0**:
 * Improved event-message state isolation per RP chat and excluded the user's own persona name from automatic NPC discovery.
