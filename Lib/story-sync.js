@@ -421,7 +421,7 @@
                     text: entry.text,
                     scene: entry.scene || null,
                     header: entry.header || null,
-                    key: String(entry.index) + ':' + String(entry.text || '').slice(0, 96)
+                    key: String(ctx().getCurrentChatId ? ctx().getCurrentChatId() : '') + ':' + String(entry.index) + ':' + String(entry.text || '').slice(0, 96)
                 };
             }
             return null;
@@ -716,7 +716,7 @@
             jQuery('#et_ss_enabled').prop('checked', st.storySyncEnabled === true);
             jQuery('#et_ss_scenes').val(st.storySyncScenes ?? 20);
             jQuery('#et_ss_maxchars').val(st.storySyncMaxChars ?? 16000);
-            jQuery('#et_ss_unknown').val(st.storySyncUnknownPresence || 'include');
+            jQuery('#et_ss_unknown').val('exclude');
             jQuery('#et_ss_step').val(st.storySyncMinutesPerMessage ?? 1);
             jQuery('#et_ss_inject').prop('checked', st.storySyncInjectPhone !== false);
             jQuery('#et_ss_inject_count').val(st.storySyncPhoneMessages ?? 30);
@@ -745,12 +745,14 @@
             bool('#et_ss_enabled', 'storySyncEnabled');
             bool('#et_ss_inject', 'storySyncInjectPhone');
             bool('#et_ss_nogfx', 'storySyncNoGfx');
+            bool('#et_ss_event_messages', 'storyEventProactiveEnabled');
+            num('#et_ss_event_cooldown', 'storyEventCooldownMinutes', 1, 240, 15);
             num('#et_ss_scenes', 'storySyncScenes', 1, 500, 20);
             num('#et_ss_maxchars', 'storySyncMaxChars', 500, 200000, 16000);
             num('#et_ss_step', 'storySyncMinutesPerMessage', 0, 120, 1);
             num('#et_ss_inject_count', 'storySyncPhoneMessages', 1, 500, 30);
             jQuery(document).off('change.etss-unknown').on('change.etss-unknown', '#et_ss_unknown', function () {
-                s().storySyncUnknownPresence = jQuery(this).val() === 'exclude' ? 'exclude' : 'include';
+                s().storySyncUnknownPresence = 'exclude';
                 save();
             });
             jQuery(document).off('click.etss-refresh').on('click.etss-refresh', '#et_ss_refresh', () => { invalidateTimeline(); refreshInjections(); updateStatusUi(); });
