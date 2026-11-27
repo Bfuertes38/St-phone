@@ -2051,12 +2051,15 @@
         const finalUserContent = latestUserApiMessage && Array.isArray(latestUserApiMessage.content)
             ? [...latestUserApiMessage.content, { type: 'text', text: finalUserText.replace(resolveHistoryMessageText(latestUserMsg), '').trim() }]
             : finalUserText;
+        const finalUserMessage = latestUserApiMessage && Array.isArray(latestUserApiMessage.images)
+            ? { role: 'user', content: finalUserText, images: latestUserApiMessage.images }
+            : { role: 'user', content: finalUserContent };
 
         // ── Assemble ──────────────────────────────────────────────────────────
         const apiMessages = [
             { role: 'system', content: systemPrompt },
             ...historyMessages,
-            { role: 'user', content: finalUserContent }
+            finalUserMessage
         ];
 
         // rawPrompt for non-chat backends (KoboldAI, text-completion proxies)
