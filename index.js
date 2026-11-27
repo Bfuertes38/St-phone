@@ -4639,7 +4639,7 @@
             const normalized = name.toLowerCase();
             if (!name || name.length > 60 || known.has(normalized) || cardNames.has(normalized)
                 || normalized === String(getUserName() || '').toLowerCase()
-                || /^(none|nobody|no one|unknown|n\/a|na|user)$/i.test(name)) return;
+                || /^(none|nobody|no one|unknown|n\/a|na|user|assistant|system|narrator|world)$/i.test(name)) return;
             settings.phoneNpcContacts.push({
                 __key: phoneNpcKey(name), name: name, avatar: '',
                 description: 'You are ' + name + ', a supporting character in the ongoing roleplay. Stay consistent with established events. You only know events you personally witnessed and information someone told you directly. Do not invent private conversations or knowledge you were not present for.',
@@ -4650,7 +4650,11 @@
             known.add(normalized); changed = true;
         };
         for (const message of chat) {
-            const text = String(message && message.mes || '');
+            if (!message || message.is_user || message.is_system) continue;
+            // Some group/chat integrations store an NPC speaker in the message's
+            // own name field rather than in a Present: scene header.
+            if (message.name) addName(message.name);
+            const text = String(message.mes || '');
             for (const match of text.matchAll(/(?:👥\s*)?Present\s*:\s*([^\]\n\r]+)/gi)) {
                 match[1].split(/\s*(?:,|;|&|\band\b|\|)\s*/i).forEach(addName);
             }
