@@ -4688,6 +4688,78 @@
                 '</strong><small>' + label + '</small></div>' + actions + '</div>';
         }).join('');
     }
+
+    const etStoryEventLocks = new Set();
+    async function handleStoryEventProactive() {
+        if (!storySync || !storySync.isActive() || !settings.proactiveMessagingEnabled || settings.storyEventProactiveEnabled === false) return;
+        if (isGenerating || !storySync.getLatestWitnessedEvent) return;
+        const hidden = new Set(settings.phoneContactHidden || []);
+        const contacts = getPhoneContactEntries().filter(contact => !hidden.has(contact.__key));
+        const cooldownMs = Math.max(1, Number(settings.storyEventCooldownMinutes || 15)) * 60 * 1000;
+        let sentCount = 0;
+        for (const contact of contacts) {
+            if (sentCount >= 2) break;
+            const key = contact.__key || contact.avatar || contact.name;
+            if (!key || etStoryEventLocks.has(key)) continue;
+            const event = storySync.getLatestWitnessedEvent(contact.name);
+            if (!event) continue;
+            const state = settings.storyEventProactiveState[key] || {};
+            if (state.lastEventKey === event.key) continue;
+            if (state.lastSentAt && Date.now() - state.lastSentAt < cooldownMs) continue;
+            const history = storySync.getHistory(key);
+            if (!Array.isArray(history) || !history.length) continue;
+            etStoryEventLocks.add(key);
+            try {
+                const instruction = 'A new roleplay event just happened that you personally witnessed. ' +
+                    'Decide whether it would feel natural for you to text ' + getUserName() + ' about it now. ' +
+                    'Use only your own witnessed perspective and your private phone conversation. ' +
+                    'Do not mention or imply knowledge of other characters’ private phone conversations. ' +
+                    'If you have nothing natural to say, output exactly [NO_MESSAGE]. ' +
+                    'Otherwise send one concise, in-character text message. You may use [VOICE_NOTE] before spoken words if audio suits the moment. ' +
+                    'The witnessed event was: ' + String(event.text || '').slice(0, 2200);
+                const built = await buildApiMessagesFromHistoryForChar(history, [], contact);
+                built.apiMessages.push({ role: 'user', content: instruction });
+                const rawPrompt = built.rawPrompt + '\n\n' + instruction + '\n' + contact.name + ':';
+                const result = await requestEchoTextCompletion({
+                    apiMessages: built.apiMessages,
+                    rawPrompt,
+                    systemPrompt: built.systemPrompt,
+                    signal: new AbortController().signal
+                });
+                const cleaned = String(result || '').trim();
+                settings.storyEventProactiveState[key] = { lastEventKey: event.key, lastSentAt: state.lastSentAt || 0 };
+                if (!cleaned || /^\[NO_MESSAGE\]$/i.test(cleaned)) {
+                    saveSettings();
+                    continue;
+                }
+                const directive = etParseVoiceNoteDirective(cleanGeneratedResponse(cleaned));
+                if (!directive.text) { saveSettings(); continue; }
+                const reply = {
+                    is_user: false,
+                    mes: directive.text,
+                    send_date: Date.now(),
+                    meta: { proactive: true, proactiveType: 'story_event' },
+                    story: storySync.stamp()
+                };
+                const nextHistory = [...history, reply];
+                storySync.setHistory(key, nextHistory);
+                settings.storyEventProactiveState[key].lastSentAt = Date.now();
+                saveSettings();
+                sentCount++;
+                if (panelOpen && getCharacterKey() === key) {
+                    renderMessages(nextHistory);
+                    if (directive.requested) etQueueAutoVoiceNote(nextHistory.length - 1);
+                } else {
+                    setFabUnreadIndicator(true);
+                }
+            } catch (err) {
+                warn('Story-event message failed for ' + contact.name + ':', err);
+            } finally {
+                etStoryEventLocks.delete(key);
+            }
+        }
+    }
+
     function openPhoneContacts() {
         ensurePhoneContactSettings();
         jQuery('#et-phone-contacts-modal').remove();
@@ -7942,6 +8014,7 @@
                 // The phone history belongs to the RP chat — re-render for the new chat
                 if (panelOpen && storySync.isEnabled()) applySelectedCharacterToPanel();
             },
+            onStoryEvent: () => { handleStoryEventProactive(); },
             onSettingsChanged: () => {
                 startProactiveScheduler();
                 if (panelOpen) applySelectedCharacterToPanel();
