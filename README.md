@@ -38,6 +38,14 @@ It lives as a draggable, resizable panel floating over SillyTavern. Text a diffe
 
 ## Updates
 
+**v1.3.0-storysync.0**:
+* Added an automatic Contacts view for character cards in the active SillyTavern cast.
+* Added story-NPC discovery from roleplay scene `Present:` headers and manual NPC contact creation.
+* Added contact removal and restore controls, with independent private threads for NPC contacts.
+* Changed Story Sync to strict witnessed-only context and migrated existing installs away from the old include-unknown default.
+* Limited phone-to-RP prompt injection to the active RP character's own phone thread, preventing other contacts' private messages from leaking into that character's prompt.
+
+
 **v1.2.8-storysync.0**:
 * Added phone voice-note recording with browser speech transcription where supported.
 * Added playable voice-note messages with transcripts displayed underneath.
