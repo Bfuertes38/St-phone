@@ -357,6 +357,14 @@
         if (!s.proactiveState || typeof s.proactiveState !== 'object' || Array.isArray(s.proactiveState)) {
             s.proactiveState = {};
         }
+        // Privacy migration: the old default included scenes with unknown presence.
+        // Move existing installs to strict witnessed-only context exactly once.
+        if (Number(s.phonePrivacyVersion || 0) < 1) {
+            s.storySyncUnknownPresence = 'exclude';
+            s.phonePrivacyVersion = 1;
+            context.saveSettingsDebounced();
+        }
+        if (!Array.isArray(s.phoneContactHidden)) s.phoneContactHidden = [];
         return s;
     }
 
