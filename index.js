@@ -3009,9 +3009,10 @@
 
 
 
+                const voiceDirective = etParseVoiceNoteDirective(trimmedResult);
                 const charReply = {
                     is_user: false,
-                    mes: trimmedResult,
+                    mes: voiceDirective.text,
                     send_date: Date.now()
                 };
                 addStoryStamp(charReply);
@@ -3063,6 +3064,7 @@
                     try { if (memorySystem) memorySystem.incrementTurn(); } catch (e) { /* ignore */ }
                 }
                 renderMessages(newHistory);
+                if (voiceDirective.requested && charReply.mes) etQueueAutoVoiceNote(newHistory.length - 1);
                 setFabUnreadIndicator(panelOpen ? false : true);
             }
 
@@ -3847,9 +3849,10 @@
                     setTypingIndicatorVisible(false);
 
                     if (result && result.trim()) {
+                        const voiceDirective = etParseVoiceNoteDirective(cleanGeneratedResponse(result));
                         const charReply = {
                             is_user: false,
-                            mes: cleanGeneratedResponse(result),
+                            mes: voiceDirective.text,
                             charName: char.name,
                             charKey: charKey,
                             send_date: Date.now()
@@ -3857,6 +3860,7 @@
                         workingHistory = [...workingHistory, charReply];
                         groupManager.saveCombineHistory(groupId, workingHistory, !isTetheredMode());
                         renderMessages(workingHistory);
+                        if (voiceDirective.requested && charReply.mes) etQueueAutoVoiceNote(workingHistory.length - 1);
                         setFabUnreadIndicator(panelOpen ? false : true);
                     }
                 } finally {
@@ -5530,6 +5534,18 @@
         });
         etPhoneTtsListenerInstalled = true;
         return true;
+    }
+
+
+    function etParseVoiceNoteDirective(text) {
+        const match = String(text || '').match(/^\s*(?:\[\[VOICE_NOTE\]\]|\[VOICE_NOTE\])\s*/i);
+        return { requested: !!match, text: match ? String(text || '').slice(match[0].length).trim() : String(text || '').trim() };
+    }
+    function etQueueAutoVoiceNote(messageIndex) {
+        const trigger = document.createElement('button');
+        trigger.dataset.index = String(messageIndex);
+        trigger.className = 'et-phone-auto-voice-trigger';
+        etCreateCharacterVoiceNote(trigger);
     }
 
     function etPhoneVoiceButtonMarkup(msg, index) {
