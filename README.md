@@ -14,8 +14,10 @@ A [SillyTavern](https://github.com/SillyTavern/SillyTavern) extension that adds 
 > **Story Sync fork** — based on EchoText v1.2.6. Adds a phone ↔ roleplay bridge (Settings → Extensions → EchoText → **Story Sync**):
 > * **Story clock** — reads the scene header at the top of each RP reply (`[ 🕰️ Time … | 🗓️ Day … | 📍 … | 👥 Present: … | … ]`) and uses story time for phone timestamps and `{{time}}`/`{{date}}`/`{{weekday}}`. Every text advances the clock by a configurable number of minutes.
 > * **Scene filter** — the phone character receives only RP scenes whose `👥 Present` field lists them, with gap markers where events were cut, so they can't leak what they never saw.
+> * **Group witnessed context** — in combined group chats, each character receives only roleplay scenes whose `Present:` field explicitly includes them; unknown-presence scenes are excluded.
 > * **Phone → RP** — phone conversations are injected into the main RP prompt right after the RP message they followed (the depth updates as the chat grows), plus an OOC note forbidding phone GFX.
 > * **Per-chat phone** — in Story Sync mode the phone history is stored in the RP chat's metadata (branches copy it). Real-clock proactive messages are paused.
+> * **Contacts** — character cards are listed automatically; supporting NPCs are discovered from `Present:` headers and named RP speakers, with manual add, hide, and restore controls.
 > * Scope: Tethered mode, solo RP chats. Untethered mode and group sessions behave as upstream.
 
 ---
