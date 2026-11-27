@@ -409,6 +409,24 @@
             return -1;
         }
 
+        function getLatestWitnessedEvent(charName) {
+            if (!charName || !isActive()) return null;
+            const timeline = getTimeline();
+            for (let i = timeline.length - 1; i >= 0; i--) {
+                const entry = timeline[i];
+                if (!entry || !entry.msg || entry.msg.is_user || entry.msg.is_system) continue;
+                if (presenceOf(entry, charName) !== true) continue;
+                return {
+                    index: entry.index,
+                    text: entry.text,
+                    scene: entry.scene || null,
+                    header: entry.header || null,
+                    key: String(entry.index) + ':' + String(entry.text || '').slice(0, 96)
+                };
+            }
+            return null;
+        }
+
         function getClock(timeline) {
             const tl = timeline || getTimeline();
             let latest = null;
@@ -642,6 +660,15 @@
             if (!c.eventSource || !c.event_types) return;
             unbindEvents();
             boundHandler = () => { invalidateTimeline(); refreshInjections(); updateStatusUi(); };
+            const storyEventType = c.event_types.GENERATION_AFTER_COMMANDS;
+            if (storyEventType) {
+                const storyEventHandler = () => {
+                    invalidateTimeline();
+                    if (api.onStoryEvent) api.onStoryEvent();
+                };
+                c.eventSource.on(storyEventType, storyEventHandler);
+                boundEvents.push([storyEventType, storyEventHandler]);
+            }
             boundChatChanged = () => {
                 invalidateTimeline();
                 refreshInjections();
@@ -746,6 +773,7 @@
             bindSettingsUi,
             syncSettingsUi,
             getClock,
+            getLatestWitnessedEvent,
         };
     }
 
