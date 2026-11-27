@@ -18,7 +18,8 @@ A [SillyTavern](https://github.com/SillyTavern/SillyTavern) extension that adds 
 > * **Phone → RP** — phone conversations are injected into the main RP prompt right after the RP message they followed (the depth updates as the chat grows), plus an OOC note forbidding phone GFX.
 > * **Per-chat phone** — in Story Sync mode the phone history is stored in the RP chat's metadata (branches copy it). Real-clock proactive messages are paused.
 > * **Contacts** — character cards are listed automatically; supporting NPCs are discovered from `Present:` headers and named RP speakers, with manual add, hide, and restore controls.
-> * Scope: Tethered mode, solo RP chats. Untethered mode and group sessions behave as upstream.
+> * **Voice notes and attachments** — record and play voice notes with browser transcription where available, generate character voice notes through SillyTavern TTS, and share images, files, and links. Image vision is currently supported for OpenAI-compatible and Ollama backends; text extraction is currently limited to text-like files.
+> * **Scope:** Full Story Sync phone storage and phone-to-RP injection remain tethered/solo. Combined group chats additionally receive per-character witnessed-scene context; group phone history remains governed by the group manager.
 
 ---
 
