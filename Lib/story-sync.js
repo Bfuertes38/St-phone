@@ -492,6 +492,37 @@
 
         // ── RP → phone ───────────────────────────────────────────────────────
 
+        // Group-safe witnessed RP context. Unlike isActive(), this helper deliberately
+        // does not reject group sessions: each member gets only scenes they personally
+        // witnessed, while the shared group thread remains limited to its participants.
+        function buildWitnessedSceneContext(char) {
+            if (!isEnabled() || !hasOpenChat() || (api.isTetheredMode && !api.isTetheredMode()) || !char) return '';
+            const st = s();
+            const charName = char.name || 'Character';
+            const userName = api.getUserName ? api.getUserName() : 'User';
+            const rpCharName = (() => {
+                const c = ctx();
+                return (c.characters && c.characters[c.characterId] && c.characters[c.characterId].name) || c.name2 || 'Character';
+            })();
+            const timeline = getTimeline();
+            const sel = selectWitnessed(timeline, charName, {
+                maxMessages: Number(st.storySyncScenes) || 20,
+                maxChars: Number(st.storySyncMaxChars) || 16000,
+                unknownPolicy: 'exclude',
+            });
+            if (!sel.count) return '';
+            const lines = sel.items.map(it => {
+                if (it.gap) return '[— time passes; events this character did not witness are omitted —]';
+                const speaker = it.isUser ? userName : (it.msg.name || rpCharName);
+                return speaker + ': ' + it.text;
+            });
+            if (sel.missedRecent) lines.push('[— more recent events happened that this character did not witness —]');
+            return '\\n\\n<story_so_far>\\nThis is the in-person roleplay so far, limited strictly to scenes ' + charName +
+                ' personally witnessed (oldest first). Anything omitted is unknown to ' + charName +
+                ' unless someone told them directly. Never reference omitted events.\\n\\n' +
+                lines.join('\\n\\n') + '\\n</story_so_far>';
+        }
+
         function buildPhoneContextBlock(char) {
             if (!isActive() || !char) return '';
             const st = s();
@@ -770,6 +801,7 @@
             formatStamp,
             getMacroValues,
             buildPhoneContextBlock,
+            buildWitnessedSceneContext,
             refreshInjections,
             clearInjections,
             bindEvents,
