@@ -92,57 +92,6 @@ function getCurrentSpeakerName(eventData) {
  * Inject ONLY the currently replying character's private phone history
  * into the main chat prompt so other characters do not know about it.
  */
-function getCurrentSpeakerName(eventData = null) {
-    const ctx = getST();
-    if (typeof eventData === 'string') return eventData;
-    if (eventData?.charName) return eventData.charName;
-    if (eventData?.character?.name) return eventData.character.name;
-    if (eventData?.name && eventData.name !== ctx.name1) return eventData.name;
-    // In group chats, fail closed unless the generation event identifies its speaker.
-    if (ctx.groupId) return null;
-    return ctx.characters?.[ctx.characterId]?.name || null;
-}
-
-function syncPrivatePhoneMemoryToMainPrompt(eventData = null) {
-    const ctx = getST();
-    if (typeof ctx.setExtensionPrompt !== 'function') return;
-
-    const data = ensurePhoneData();
-    const speakerName = getCurrentSpeakerName(eventData);
-
-    if (!speakerName) {
-        ctx.setExtensionPrompt(PROMPT_TAG, '', 1, 0);
-        return;
-    }
-
-    const matchingContact = Object.values(data.contacts).find(
-        (c) => c.name.toLowerCase() === speakerName.toLowerCase()
-    );
-
-    if (!matchingContact) {
-        ctx.setExtensionPrompt(PROMPT_TAG, '', 1, 0);
-        return;
-    }
-
-    const thread = (data.threads[matchingContact.id] || []).slice(-10);
-    if (!thread.length) {
-        ctx.setExtensionPrompt(PROMPT_TAG, '', 1, 0);
-        return;
-    }
-
-    const userName = ctx.name1 || 'User';
-    const formatted = thread
-        .map((msg) => {
-            const who = msg.sender === 'user' ? userName : matchingContact.name;
-            const extra = msg.meta?.summary ? ` [${msg.meta.summary}]` : '';
-            return `- (${msg.type}) ${who}: ${msg.content}${extra}`;
-        })
-        .join('\n');
-
-    const promptText = `[Private Mobile Phone History known ONLY to ${matchingContact.name} and ${userName}. Other characters in the story have NO knowledge of these texts/calls unless explicitly told:\n${formatted}]`;
-
-    ctx.setExtensionPrompt(PROMPT_TAG, promptText, 1, 1);
-}
 
 /**
  * Generate an NPC reply on the phone using ONLY:
