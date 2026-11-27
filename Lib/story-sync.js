@@ -489,7 +489,7 @@
             const sel = selectWitnessed(timeline, charName, {
                 maxMessages: Number(st.storySyncScenes) || 20,
                 maxChars: Number(st.storySyncMaxChars) || 16000,
-                unknownPolicy: st.storySyncUnknownPresence || 'include',
+                unknownPolicy: 'exclude', // strict privacy: unknown presence is never treated as witnessed
             });
 
             let out = '';
@@ -568,18 +568,22 @@
                 const last = lastRpIndex(chat);
                 if (last < 0) return;
 
-                // Collect stamped phone messages from every contact in this chat
+                // Privacy boundary: only inject the thread belonging to the
+                // character currently driving the RP chat. Never expose other
+                // contacts' private phone conversations to this character.
+                const rpChar = c.characters && c.characters[c.characterId];
+                if (!rpChar) return;
+                const rpKey = rpChar.avatar || rpChar.name;
+                const rpHistory = store.phone[rpKey];
+                if (!Array.isArray(rpHistory) || !rpHistory.length) return;
                 const all = [];
-                for (const [key, hist] of Object.entries(store.phone)) {
-                    if (!Array.isArray(hist)) continue;
-                    const name = getContactName(key);
-                    hist.forEach((m, order) => {
-                        if (!m || !m.story || !Number.isFinite(m.story.rp)) return;
-                        const text = phoneMessageText(m);
-                        if (!text) return;
-                        all.push({ key, name, m, order, text, abs: m.story.abs, rp: Math.min(m.story.rp, last) });
-                    });
-                }
+                const name = getContactName(rpKey);
+                rpHistory.forEach((m, order) => {
+                    if (!m || !m.story || !Number.isFinite(m.story.rp)) return;
+                    const text = phoneMessageText(m);
+                    if (!text) return;
+                    all.push({ key: rpKey, name, m, order, text, abs: m.story.abs, rp: Math.min(m.story.rp, last) });
+                });
                 if (!all.length) return;
                 all.sort((a, b) => (a.abs - b.abs) || (a.order - b.order));
                 const limit = Math.max(1, Number(st.storySyncPhoneMessages) || 30);
