@@ -5314,6 +5314,55 @@
             req.onsuccess = () => resolve(req.result || null); req.onerror = () => reject(req.error || new Error('Could not load attachment.'));
         });
     }
+
+    async function etHydratePhoneAttachmentImages() {
+        const images = document.querySelectorAll('#et-messages-inner .et-phone-image-preview:not([data-loaded])');
+        for (const img of images) {
+            img.dataset.loaded = '1';
+            try {
+                const item = await etLoadPhoneMedia(img.dataset.mediaId);
+                if (!item || !item.blob || !img.isConnected) continue;
+                const url = URL.createObjectURL(item.blob);
+                img.dataset.objectUrl = url;
+                img.src = url;
+                img.addEventListener('error', () => {
+                    if (img.dataset.objectUrl) URL.revokeObjectURL(img.dataset.objectUrl);
+                    img.removeAttribute('src');
+                    img.alt = 'Photo preview unavailable';
+                }, { once: true });
+            } catch (err) {
+                console.warn('[EchoText] Could not display attached photo:', err);
+            }
+        }
+    }
+
+    async function etExtractPhoneAttachmentText(file) {
+        const name = String(file.name || '');
+        const type = String(file.type || '');
+        if (/^(text\/|application\/(json|xml))/.test(type) || /\.(txt|md|json|csv|log)$/i.test(name)) {
+            return (await file.text()).slice(0, 6000);
+        }
+        if (type === 'application/pdf' || /\.pdf$/i.test(name)) {
+            const pdf = window.pdfjsLib;
+            if (pdf && typeof pdf.getDocument === 'function') {
+                const document = await pdf.getDocument({ data: await file.arrayBuffer() }).promise;
+                const pages = [];
+                for (let pageNo = 1; pageNo <= Math.min(document.numPages, 20); pageNo++) {
+                    const page = await document.getPage(pageNo);
+                    const content = await page.getTextContent();
+                    pages.push(content.items.map(item => item.str || '').join(' '));
+                    if (pages.join('\n').length > 6000) break;
+                }
+                return pages.join('\n').slice(0, 6000);
+            }
+        }
+        if (/\.docx$/i.test(name) && window.mammoth && typeof window.mammoth.extractRawText === 'function') {
+            const result = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+            return String(result.value || '').slice(0, 6000);
+        }
+        return '';
+    }
+
     function etPhoneAttachmentContext(msg) {
         const a = msg && msg.phoneAttachment; if (!a) return '';
         if (a.type === 'voice') return a.transcript ? '[Voice note transcript: ' + a.transcript + ']' : '[A voice note was attached, but its transcript is unavailable. Do not guess its contents.]';
@@ -5334,6 +5383,9 @@
         if (a.type === 'link') {
             let url = ''; try { const parsed = new URL(a.url); if (parsed.protocol === 'https:' || parsed.protocol === 'http:') url = parsed.href; } catch (_) {}
             return url ? '<div class="et-phone-attachment"><a href="' + safe(url) + '" target="_blank" rel="noopener noreferrer">' + safe(a.label || url) + '</a>' + (a.note ? '<div>' + safe(a.note) + '</div>' : '') + '</div>' : '';
+        }
+        if (a.type === 'image') {
+            return '<div class="et-phone-attachment et-phone-image-attachment"><img class="et-phone-image-preview" data-media-id="' + safe(a.mediaId) + '" alt="' + safe(a.fileName || 'Shared photo') + '" loading="lazy"><span>' + safe(a.fileName || 'Photo') + '</span><button type="button" class="et-phone-media-open" data-media-id="' + safe(a.mediaId) + '" data-media-kind="file" data-file-name="' + safe(a.fileName || 'photo') + '">Download photo</button></div>';
         }
         return '<div class="et-phone-attachment"><span><i class="fa-solid ' + (a.type === 'image' ? 'fa-image' : 'fa-paperclip') + '"></i> ' + safe(a.fileName || 'Attachment') + '</span><button type="button" class="et-phone-media-open" data-media-id="' + safe(a.mediaId) + '" data-media-kind="file" data-file-name="' + safe(a.fileName || 'attachment') + '">Open / download</button></div>';
     }
@@ -5379,7 +5431,7 @@
             try {
                 const mediaId = await etStorePhoneMedia(file, file.name);
                 const a = { type: file.type.startsWith('image/') ? 'image' : 'file', mediaId, fileName: file.name, mimeType: file.type, size: file.size };
-                if (/^(text\/|application\/(json|xml))/.test(file.type) || /\.(txt|md|json|csv|log)$/i.test(file.name)) { try { a.extractedText = (await file.text()).slice(0, 6000); } catch (_) {} }
+                try { a.extractedText = await etExtractPhoneAttachmentText(file); } catch (extractErr) { console.warn('[EchoText] Attachment text extraction unavailable:', extractErr); }
                 etPendingPhoneAttachment = a; etRefreshPhoneAttachmentPreview();
             } catch (err) { toastr.error(err.message || 'Could not attach that file.'); }
         });
@@ -5552,6 +5604,12 @@
         if (document.body.dataset.etPhoneMediaBound) return;
         document.body.dataset.etPhoneMediaBound = '1';
         document.addEventListener('click', event => {
+            const imagePreview = event.target.closest && event.target.closest('.et-phone-image-preview');
+            if (imagePreview) {
+                event.preventDefault();
+                if (imagePreview.dataset.objectUrl) openGeneratedImageLightbox(imagePreview.dataset.objectUrl, imagePreview.alt || 'Shared photo');
+                return;
+            }
             const mediaButton = event.target.closest && event.target.closest('.et-phone-media-open');
             if (mediaButton) { event.preventDefault(); etOpenPhoneAttachment(mediaButton); return; }
             const voiceButton = event.target.closest && event.target.closest('.et-phone-create-voice');
@@ -6215,6 +6273,9 @@
         const messagesEl = document.getElementById('et-messages');
         const savedScrollTop = (preserveScroll && messagesEl) ? messagesEl.scrollTop : null;
 
+        inner.find('.et-phone-image-preview').each(function () {
+            if (this.dataset.objectUrl) URL.revokeObjectURL(this.dataset.objectUrl);
+        });
         inner.empty();
 
         if (!history || history.length === 0) {
@@ -6469,6 +6530,8 @@
         if (settings.swipedMessages && isMobileDevice() && lastCharMsgIndex >= 0) {
             bindBubbleTouchSwipe(inner, lastCharMsgIndex);
         }
+
+        etHydratePhoneAttachmentImages();
 
         if (preserveScroll && messagesEl && savedScrollTop !== null) {
             // Restore the scroll position the user was at before the edit re-render
