@@ -12124,3 +12124,9 @@ textarea.et-mem-save-snippet-edit::placeholder {
 
 .et-phone-image-attachment { max-width:min(100%,280px); }
 .et-phone-image-preview { display:block; width:auto; max-width:100%; max-height:260px; border-radius:9px; object-fit:contain; cursor:zoom-in; }
+
+
+.et-phone-diagnostics { margin-top:10px; padding:10px; border:1px solid var(--et-border,rgba(255,255,255,.15)); border-radius:10px; font-size:.78rem; }
+.et-phone-diagnostics > strong { display:block; margin-bottom:6px; }
+.et-phone-diagnostics > div { display:flex; justify-content:space-between; gap:10px; padding:4px 0; border-top:1px solid var(--et-border,rgba(255,255,255,.08)); }
+.et-phone-diagnostics b { text-align:right; font-weight:500; }
