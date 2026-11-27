@@ -38,10 +38,11 @@ It lives as a draggable, resizable panel floating over SillyTavern. Text a diffe
 
 ## Updates
 
-**v1.2.7-storysync.0**:
+**v1.2.8-storysync.0**:
 * Added phone voice-note recording with browser speech transcription where supported.
 * Added playable voice-note messages with transcripts displayed underneath.
 * Added photo/file attachments and web-link sharing in the EchoText composer.
+* Added an action to create a character voice note using that character's configured SillyTavern TTS voice.
 * Media blobs are stored locally in the browser's IndexedDB; message history stores attachment metadata and transcripts.
 
 
