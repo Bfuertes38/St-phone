@@ -946,3 +946,5 @@
 .et-phone-contacts-card { max-height:84%; }
 .et-phone-contact-row { min-height:54px; }
 .et-phone-contact-row button,.et-phone-contacts-actions button { min-height:38px; }
+
+.et-phone-image-preview { max-height:34vh; }
