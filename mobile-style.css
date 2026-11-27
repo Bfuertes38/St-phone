@@ -942,3 +942,7 @@
 .et-phone-tool { min-width:44px; min-height:44px; }
 .et-phone-tool-row { gap:8px; }
 .et-phone-audio-player { max-width:100%; }
+
+.et-phone-contacts-card { max-height:84%; }
+.et-phone-contact-row { min-height:54px; }
+.et-phone-contact-row button,.et-phone-contacts-actions button { min-height:38px; }
