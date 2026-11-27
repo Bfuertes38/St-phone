@@ -5264,9 +5264,10 @@
             const pending = etPhoneTtsPending;
             if (!pending || !data || !data.audio) return;
             if (String(data.characterName || '').toLowerCase() !== pending.charName.toLowerCase()) return;
-            const audioText = String(data.text || '').trim().toLowerCase();
-            const expected = pending.text.toLowerCase();
-            if (audioText && !expected.includes(audioText.slice(0, Math.min(24, audioText.length))) && !audioText.includes(expected.slice(0, Math.min(24, expected.length)))) return;
+            const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const audioText = normalize(data.text);
+            const expected = normalize(pending.text);
+            if (audioText && expected && !expected.includes(audioText.slice(0, Math.min(24, audioText.length))) && !audioText.includes(expected.slice(0, Math.min(24, expected.length)))) return;
             etPhoneTtsPending = null;
             pending.resolve({ audio: data.audio, mimeType: data.mimeType || 'audio/mpeg' });
         });
