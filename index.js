@@ -1972,7 +1972,7 @@
         // another character's line as its own prior output.
         const historyMessages = priorHistory.map(msg => {
             if (msg.is_user) {
-                return { role: 'user', content: stripThinkingTags(msg.mes || '') };
+                return { role: 'user', content: resolveHistoryMessageText(msg) };
             }
             const speaker = msg.charName || charName;
             return { role: 'assistant', content: `${speaker}: ${stripThinkingTags(msg.mes || '')}` };
@@ -1983,7 +1983,7 @@
 
         // Latest user message
         if (latestUserMsg) {
-            finalUserParts.push(latestUserMsg.mes || '');
+            finalUserParts.push(resolveHistoryMessageText(latestUserMsg));
         }
 
         // User persona description
@@ -2810,13 +2810,9 @@
      */
     function resolveHistoryMessageText(msg) {
         const rawText = stripThinkingTags(msg.mes || '');
-        if (!msg.is_user && !rawText.trim() && msg.imageAttachment?.status === 'ready') {
-            // A silent image turn — give the model a compact, in-character stub so it
-            // knows the action was completed.  The exact phrasing is deliberately terse
-            // to avoid bloating the context with fabricated prose.
-            return '*[shared a photo]*';
-        }
-        return rawText;
+        const attachmentText = etPhoneAttachmentContext(msg);
+        if (!msg.is_user && !rawText.trim() && msg.imageAttachment?.status === 'ready') return ['*[shared a photo]*', attachmentText].filter(Boolean).join('\\n');
+        return [rawText, attachmentText].filter(Boolean).join('\\n');
     }
 
     async function buildApiMessagesFromHistory(history, extraSystemMessages = [], targetCharOverride = null) {
@@ -4997,6 +4993,8 @@
         });
 
         jQuery('#et-send-btn').on('click', handleSend);
+        etBuildPhoneAttachmentControls();
+        etBindPhoneAttachmentEvents();
 
         jQuery('#et-input').on('keydown', function (e) {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -5080,6 +5078,187 @@
         });
     }
 
+
+    // Voice notes and user attachments. Binary media stays in IndexedDB.
+    const ET_PHONE_DB = 'echotext-phone-media';
+    let etPhoneDb = null, etPendingPhoneAttachment = null, etPhoneRecorder = null, etPhoneStream = null;
+    let etPhoneChunks = [], etPhoneRecognition = null, etPhoneTranscript = '', etPhoneStartedAt = 0;
+    function etOpenPhoneDb() {
+        if (etPhoneDb) return Promise.resolve(etPhoneDb);
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(ET_PHONE_DB, 1);
+            request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains('media')) request.result.createObjectStore('media', { keyPath: 'id' }); };
+            request.onsuccess = () => { etPhoneDb = request.result; resolve(etPhoneDb); };
+            request.onerror = () => reject(request.error || new Error('Could not open local media storage.'));
+        });
+    }
+    async function etStorePhoneMedia(blob, fileName) {
+        const db = await etOpenPhoneDb();
+        const id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'et-media-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction('media', 'readwrite');
+            tx.objectStore('media').put({ id, blob, fileName: fileName || 'attachment', mimeType: blob.type || 'application/octet-stream' });
+            tx.oncomplete = resolve; tx.onerror = () => reject(tx.error || new Error('Could not save attachment.'));
+        });
+        return id;
+    }
+    async function etLoadPhoneMedia(id) {
+        const db = await etOpenPhoneDb();
+        return new Promise((resolve, reject) => {
+            const req = db.transaction('media', 'readonly').objectStore('media').get(id);
+            req.onsuccess = () => resolve(req.result || null); req.onerror = () => reject(req.error || new Error('Could not load attachment.'));
+        });
+    }
+    function etPhoneAttachmentContext(msg) {
+        const a = msg && msg.phoneAttachment; if (!a) return '';
+        if (a.type === 'voice') return a.transcript ? '[Voice note transcript: ' + a.transcript + ']' : '[A voice note was attached, but its transcript is unavailable. Do not guess its contents.]';
+        if (a.type === 'image') return '[Photo attached: ' + (a.fileName || 'photo') + ']';
+        if (a.type === 'file') return '[File attached: ' + (a.fileName || 'file') + ']' + (a.extractedText ? '\nExtracted text:\n' + a.extractedText.slice(0, 6000) : '');
+        if (a.type === 'link') return '[Link shared: ' + a.url + ']' + (a.note ? ' Note: ' + a.note : '');
+        return '';
+    }
+    function etPhoneAttachmentMarkup(msg) {
+        const a = msg && msg.phoneAttachment; if (!a) return '';
+        const safe = value => escapeHtml(String(value == null ? '' : value));
+        if (a.type === 'voice') {
+            const secs = Math.floor((a.durationMs || 0) / 1000);
+            const duration = a.durationMs ? Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0') : '';
+            const transcript = a.transcript ? '<details class="et-phone-transcript" open><summary>Transcript</summary><div>' + safe(a.transcript) + '</div></details>' : '<div class="et-phone-no-transcript">Transcript unavailable in this browser</div>';
+            return '<div class="et-phone-attachment et-phone-voice"><button type="button" class="et-phone-media-open" data-media-id="' + safe(a.mediaId) + '" data-media-kind="audio"><i class="fa-solid fa-play"></i> Play voice note' + (duration ? ' · ' + duration : '') + '</button>' + transcript + '</div>';
+        }
+        if (a.type === 'link') {
+            let url = ''; try { const parsed = new URL(a.url); if (parsed.protocol === 'https:' || parsed.protocol === 'http:') url = parsed.href; } catch (_) {}
+            return url ? '<div class="et-phone-attachment"><a href="' + safe(url) + '" target="_blank" rel="noopener noreferrer">' + safe(a.label || url) + '</a>' + (a.note ? '<div>' + safe(a.note) + '</div>' : '') + '</div>' : '';
+        }
+        return '<div class="et-phone-attachment"><span><i class="fa-solid ' + (a.type === 'image' ? 'fa-image' : 'fa-paperclip') + '"></i> ' + safe(a.fileName || 'Attachment') + '</span><button type="button" class="et-phone-media-open" data-media-id="' + safe(a.mediaId) + '" data-media-kind="file" data-file-name="' + safe(a.fileName || 'attachment') + '">Open / download</button></div>';
+    }
+    async function etOpenPhoneAttachment(button) {
+        try {
+            const item = await etLoadPhoneMedia(button.dataset.mediaId);
+            if (!item || !item.blob) throw new Error('This attachment is not available in local storage.');
+            const url = URL.createObjectURL(item.blob);
+            if (button.dataset.mediaKind === 'audio') {
+                const audio = document.createElement('audio'); audio.controls = true; audio.preload = 'metadata'; audio.src = url; audio.className = 'et-phone-audio-player';
+                button.insertAdjacentElement('afterend', audio); button.hidden = true;
+                audio.addEventListener('ended', () => { button.hidden = false; audio.remove(); URL.revokeObjectURL(url); });
+                audio.addEventListener('error', () => { button.hidden = false; audio.remove(); URL.revokeObjectURL(url); toastr.warning('This voice note could not be played.'); });
+                await audio.play();
+            } else {
+                const link = document.createElement('a'); link.href = url;
+                link.download = String(button.dataset.fileName || item.fileName || 'attachment').replace(/[\\/]/g, '_');
+                document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
+            }
+        } catch (err) { toastr.warning(err.message || 'Could not open attachment.'); }
+    }
+    function etRefreshPhoneAttachmentPreview() {
+        const preview = document.getElementById('et-phone-attachment-preview'); if (!preview) return;
+        if (!etPendingPhoneAttachment) { preview.hidden = true; preview.textContent = ''; return; }
+        const a = etPendingPhoneAttachment, label = a.fileName || a.label || (a.type === 'voice' ? 'Voice note ready' : 'Attachment ready');
+        preview.hidden = false; preview.innerHTML = '<span>' + escapeHtml(label) + '</span><button type="button" id="et-phone-attachment-clear">×</button>';
+        preview.querySelector('button').addEventListener('click', () => { etPendingPhoneAttachment = null; etRefreshPhoneAttachmentPreview(); });
+    }
+    function etBuildPhoneAttachmentControls() {
+        const bar = document.querySelector('#et-panel .et-input-bar'), inputWrap = bar && bar.querySelector('.et-input-wrap');
+        if (!bar || !inputWrap || bar.querySelector('#et-phone-attachment-tools')) return;
+        const tools = document.createElement('div'); tools.id = 'et-phone-attachment-tools';
+        tools.innerHTML = '<div id="et-phone-attachment-preview" hidden></div><div class="et-phone-tool-row">' +
+            '<button type="button" id="et-phone-file" class="et-phone-tool" title="Attach photo or file"><i class="fa-solid fa-paperclip"></i></button>' +
+            '<button type="button" id="et-phone-link" class="et-phone-tool" title="Share a link"><i class="fa-solid fa-link"></i></button>' +
+            '<button type="button" id="et-phone-record" class="et-phone-tool" title="Record voice note"><i class="fa-solid fa-microphone"></i></button>' +
+            '<span id="et-phone-record-status" aria-live="polite"></span><input id="et-phone-file-input" type="file" accept="image/*,audio/*,.txt,.md,.pdf,.json,.csv,.doc,.docx" hidden></div>';
+        inputWrap.insertAdjacentElement('afterend', tools);
+        tools.querySelector('#et-phone-file').addEventListener('click', () => tools.querySelector('#et-phone-file-input').click());
+        tools.querySelector('#et-phone-file-input').addEventListener('change', async event => {
+            const file = event.target.files && event.target.files[0]; event.target.value = ''; if (!file) return;
+            if (file.size > 20 * 1024 * 1024) { toastr.warning('Please keep attachments under 20 MB.'); return; }
+            try {
+                const mediaId = await etStorePhoneMedia(file, file.name);
+                const a = { type: file.type.startsWith('image/') ? 'image' : 'file', mediaId, fileName: file.name, mimeType: file.type, size: file.size };
+                if (/^(text\/|application\/(json|xml))/.test(file.type) || /\.(txt|md|json|csv|log)$/i.test(file.name)) { try { a.extractedText = (await file.text()).slice(0, 6000); } catch (_) {} }
+                etPendingPhoneAttachment = a; etRefreshPhoneAttachmentPreview();
+            } catch (err) { toastr.error(err.message || 'Could not attach that file.'); }
+        });
+        tools.querySelector('#et-phone-link').addEventListener('click', () => {
+            const raw = prompt('Paste a link to share:'); if (!raw) return;
+            try {
+                const url = new URL(raw.trim()); if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('Only http and https links can be shared.');
+                etPendingPhoneAttachment = { type: 'link', url: url.href, label: url.hostname, note: prompt('Add an optional note:', '') || '' }; etRefreshPhoneAttachmentPreview();
+            } catch (err) { toastr.warning(err.message || 'Please enter a valid web link.'); }
+        });
+        tools.querySelector('#et-phone-record').addEventListener('click', etTogglePhoneRecording);
+    }
+    async function etTogglePhoneRecording() {
+        const button = document.getElementById('et-phone-record'), status = document.getElementById('et-phone-record-status');
+        if (etPhoneRecorder && etPhoneRecorder.state === 'recording') {
+            etPhoneRecorder.stop(); try { if (etPhoneRecognition) etPhoneRecognition.stop(); } catch (_) {}
+            etPhoneRecognition = null; if (status) status.textContent = 'Saving voice note…'; return;
+        }
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) { toastr.warning('Voice recording requires microphone permission and a secure browser connection.'); return; }
+        try {
+            etPhoneStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(type => window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(type));
+            etPhoneRecorder = mime ? new MediaRecorder(etPhoneStream, { mimeType: mime }) : new MediaRecorder(etPhoneStream);
+            etPhoneChunks = []; etPhoneTranscript = ''; etPhoneStartedAt = Date.now();
+            etPhoneRecorder.ondataavailable = event => { if (event.data && event.data.size) etPhoneChunks.push(event.data); };
+            etPhoneRecorder.onstop = async () => {
+                if (etPhoneStream) etPhoneStream.getTracks().forEach(track => track.stop()); etPhoneStream = null;
+                const blob = new Blob(etPhoneChunks, { type: etPhoneRecorder ? etPhoneRecorder.mimeType : 'audio/webm' }); etPhoneRecorder = null;
+                if (!blob.size) return;
+                try {
+                    const mediaId = await etStorePhoneMedia(blob, 'voice-note');
+                    etPendingPhoneAttachment = { type: 'voice', mediaId, fileName: 'Voice note', mimeType: blob.type, durationMs: Date.now() - etPhoneStartedAt, transcript: etPhoneTranscript.trim() };
+                    etRefreshPhoneAttachmentPreview();
+                    if (status) status.textContent = etPhoneTranscript.trim() ? 'Voice note ready to send.' : 'Voice note ready. Automatic transcription is not supported by this browser.';
+                } catch (err) { toastr.error(err.message || 'Could not save your voice note.'); }
+                if (button) button.classList.remove('et-phone-recording');
+            };
+            const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (Speech) {
+                etPhoneRecognition = new Speech(); etPhoneRecognition.continuous = true; etPhoneRecognition.interimResults = true;
+                etPhoneRecognition.lang = settings.phoneVoiceLanguage || navigator.language || 'en-US';
+                etPhoneRecognition.onresult = event => {
+                    let finalText = '', interimText = '';
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const words = event.results[i][0] && event.results[i][0].transcript || '';
+                        if (event.results[i].isFinal) finalText += words + ' '; else interimText += words;
+                    }
+                    etPhoneTranscript += finalText; if (status) status.textContent = (etPhoneTranscript + interimText).trim() || 'Listening…';
+                };
+                etPhoneRecognition.onerror = event => console.warn('[EchoText] Voice-note transcription:', event.error);
+                try { etPhoneRecognition.start(); } catch (_) {}
+            }
+            etPhoneRecorder.start(); if (button) button.classList.add('et-phone-recording');
+            if (status) status.textContent = 'Recording… tap the microphone again to finish.';
+        } catch (err) {
+            if (etPhoneStream) etPhoneStream.getTracks().forEach(track => track.stop()); etPhoneStream = null;
+            toastr.warning(err.name === 'NotAllowedError' ? 'Microphone permission was denied.' : (err.message || 'Could not start recording.'));
+        }
+    }
+    function etSendPhoneAttachment(text) {
+        const input = jQuery('#et-input'), char = getCurrentCharacter();
+        if (!char) { toastr.warning('Please select a character card to start texting.'); return; }
+        const a = etPendingPhoneAttachment ? { ...etPendingPhoneAttachment } : null, body = String(text || '').trim();
+        if (!body && !a) return;
+        input.val('').css('height', 'auto'); etPendingPhoneAttachment = null; etRefreshPhoneAttachmentPreview();
+        const label = a && (a.type === 'voice' ? '🎙️ Voice note' : a.type === 'image' ? '🖼️ Photo' : a.type === 'file' ? '📎 File' : '🔗 Link');
+        const userMsg = { is_user: true, mes: body || label, phoneAttachment: a, send_date: Date.now(), meta: { receipt: { state: 'sent', note: 'Sent' } } };
+        addStoryStamp(userMsg);
+        if (body && memorySystem && settings.memoryEnabled && settings.memoryAutoExtract) { try { const candidates = memorySystem.detectHighlightableText(body); if (candidates && candidates.length) userMsg.memoryHighlights = candidates; } catch (_) {} }
+        const history = [...getChatHistory(), userMsg]; saveChatHistory(history); setFabUnreadIndicator(false);
+        if (isTetheredMode()) markProactiveUserActivity(getCharacterKey(), Date.now());
+        renderMessages(history);
+        if (body) { processMessageEmotion(body, true); maybeAddCharacterReaction(history.length - 1, body); }
+        if (groupManager && groupManager.isGroupSession() && groupManager.isCombineMode()) generateEchoTextCombined(history); else generateEchoText(history);
+    }
+    function etBindPhoneAttachmentEvents() {
+        if (document.body.dataset.etPhoneMediaBound) return;
+        document.body.dataset.etPhoneMediaBound = '1';
+        document.addEventListener('click', event => {
+            const button = event.target.closest && event.target.closest('.et-phone-media-open');
+            if (button) { event.preventDefault(); etOpenPhoneAttachment(button); }
+        });
+    }
+
     function handleSend() {
         if (isGenerating) {
             if (abortController) abortController.abort();
@@ -5088,6 +5267,7 @@
 
         const input = jQuery('#et-input');
         const text = input.val().trim();
+        if (etPendingPhoneAttachment) { etSendPhoneAttachment(text); return; }
 
         const char = getCurrentCharacter();
         if (!char) {
@@ -5781,6 +5961,7 @@
                 <div class="et-message et-message-user" data-index="${index}">
                     <div class="et-bubble et-bubble-user">
                         <div class="et-bubble-text">${formattedText}</div>
+                        ${etPhoneAttachmentMarkup(msg)}
                         <div class="et-message-footer">
                             <span class="et-message-time" title="${fullDateToolip}">${time}</span>
                             <span class="et-user-name">${safeUserName}</span>
@@ -5845,6 +6026,7 @@
                         <div class="et-bubble et-bubble-char">
                             <div class="et-bubble-text">${formattedText}</div>
                             ${buildImageAttachmentHtml(msg, index)}
+                            ${etPhoneAttachmentMarkup(msg)}
                             ${swipeNavHtml}
                             <div class="et-message-footer">
                                 <div class="et-char-info-pill${showAvatar ? '' : ' et-pill-no-avatar'}">
