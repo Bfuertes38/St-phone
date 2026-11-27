@@ -5250,12 +5250,105 @@
         if (body) { processMessageEmotion(body, true); maybeAddCharacterReaction(history.length - 1, body); }
         if (groupManager && groupManager.isGroupSession() && groupManager.isCombineMode()) generateEchoTextCombined(history); else generateEchoText(history);
     }
+
+    let etPhoneTtsListenerInstalled = false;
+    let etPhoneTtsPending = null;
+
+    function etInstallPhoneTtsCapture() {
+        if (etPhoneTtsListenerInstalled) return true;
+        const context = SillyTavern.getContext && SillyTavern.getContext();
+        const eventSource = context && context.eventSource;
+        const eventType = context && context.event_types && context.event_types.TTS_AUDIO_READY;
+        if (!eventSource || !eventType || typeof eventSource.on !== 'function') return false;
+        eventSource.on(eventType, data => {
+            const pending = etPhoneTtsPending;
+            if (!pending || !data || !data.audio) return;
+            if (String(data.characterName || '').toLowerCase() !== pending.charName.toLowerCase()) return;
+            const audioText = String(data.text || '').trim().toLowerCase();
+            const expected = pending.text.toLowerCase();
+            if (audioText && !expected.includes(audioText.slice(0, Math.min(24, audioText.length))) && !audioText.includes(expected.slice(0, Math.min(24, expected.length)))) return;
+            etPhoneTtsPending = null;
+            pending.resolve({ audio: data.audio, mimeType: data.mimeType || 'audio/mpeg' });
+        });
+        etPhoneTtsListenerInstalled = true;
+        return true;
+    }
+
+    function etPhoneVoiceButtonMarkup(msg, index) {
+        if (!msg || msg.is_user || msg.phoneAttachment) return '';
+        return '<button type="button" class="et-phone-create-voice" data-index="' + index + '" title="Create a voice note using this character’s SillyTavern TTS voice"><i class="fa-solid fa-microphone-lines"></i><span>Voice note</span></button>';
+    }
+
+    async function etCreateCharacterVoiceNote(button) {
+        const index = Number(button.dataset.index);
+        const history = getChatHistory();
+        const msg = history[index];
+        if (!msg || msg.is_user || !String(msg.mes || '').trim()) return;
+        const charName = String(msg.charName || getCharacterName() || 'Character');
+        const context = SillyTavern.getContext && SillyTavern.getContext();
+        const executor = context && (context.executeSlashCommandsWithOptions || context.executeSlashCommands)
+            || window.executeSlashCommandsWithOptions || window.executeSlashCommands;
+        if (typeof executor !== 'function' || !etInstallPhoneTtsCapture()) {
+            toastr.warning('SillyTavern TTS is not available. Enable the TTS extension and configure a voice map first.');
+            return;
+        }
+        if (etPhoneTtsPending) {
+            toastr.info('A character voice note is already being generated.');
+            return;
+        }
+        const text = String(msg.mes).replace(/\s+/g, ' ').trim();
+        const voiceName = charName.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const command = '/speak voice="' + voiceName + '" ' + text;
+        button.disabled = true;
+        button.classList.add('et-phone-voice-loading');
+        try {
+            const audioPromise = new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    if (etPhoneTtsPending && etPhoneTtsPending.resolve === resolve) etPhoneTtsPending = null;
+                    reject(new Error('No TTS audio was returned. Check that SillyTavern TTS is enabled and this character has a voice assigned.'));
+                }, 20000);
+                etPhoneTtsPending = {
+                    charName,
+                    text,
+                    resolve: result => { clearTimeout(timer); resolve(result); }
+                };
+            });
+            await executor(command, { quiet: true, source: 'echotext-phone-voice' });
+            const result = await audioPromise;
+            const mediaId = await etStorePhoneMedia(result.audio, 'character-voice-note');
+            const latestHistory = getChatHistory();
+            const target = latestHistory[index];
+            if (!target || target.is_user || target.charName !== msg.charName || target.mes !== msg.mes) {
+                throw new Error('The conversation changed before the voice note could be attached.');
+            }
+            target.phoneAttachment = {
+                type: 'voice',
+                mediaId,
+                fileName: charName + ' voice note',
+                mimeType: result.mimeType,
+                durationMs: 0,
+                transcript: String(target.mes || ''),
+                generatedByTts: true
+            };
+            saveChatHistory(latestHistory);
+            renderMessages(latestHistory);
+        } catch (err) {
+            etPhoneTtsPending = null;
+            toastr.warning(err.message || 'Could not generate the character voice note.');
+        } finally {
+            button.disabled = false;
+            button.classList.remove('et-phone-voice-loading');
+        }
+    }
+
     function etBindPhoneAttachmentEvents() {
         if (document.body.dataset.etPhoneMediaBound) return;
         document.body.dataset.etPhoneMediaBound = '1';
         document.addEventListener('click', event => {
-            const button = event.target.closest && event.target.closest('.et-phone-media-open');
-            if (button) { event.preventDefault(); etOpenPhoneAttachment(button); }
+            const mediaButton = event.target.closest && event.target.closest('.et-phone-media-open');
+            if (mediaButton) { event.preventDefault(); etOpenPhoneAttachment(mediaButton); return; }
+            const voiceButton = event.target.closest && event.target.closest('.et-phone-create-voice');
+            if (voiceButton) { event.preventDefault(); etCreateCharacterVoiceNote(voiceButton); }
         });
     }
 
@@ -6036,6 +6129,7 @@
                                 <span class="et-message-time" title="${fullDateToolip}">${time}</span>
                                 ${verbosityBadge}
                                 <div class="et-bubble-actions">
+                                    ${etPhoneVoiceButtonMarkup(msg, index)}
                                     <button class="et-react-btn" data-index="${index}" title="React"><i class="fa-regular fa-face-smile"></i></button>
                                     <button class="et-dots-btn" data-index="${index}" data-is-user="0" title="More options"><i class="fa-solid fa-ellipsis-vertical"></i></button>
                                 </div>
