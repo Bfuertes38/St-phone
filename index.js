@@ -2031,6 +2031,12 @@
         if (settings.ctxDescription !== false && charDescription) charCardParts.push(`${charName}'s description: ${expandTimeDateMacros(replaceMacros(charDescription))}`);
         if (settings.ctxPersonality !== false && charPersonality)  charCardParts.push(`${charName}'s personality: ${expandTimeDateMacros(replaceMacros(charPersonality))}`);  
         if (charCardParts.length > 0) finalUserParts.push(`<character_reference>\n${charCardParts.join('\n\n')}\n</character_reference>`);
+        // In group mode, add only RP scenes this specific character witnessed.
+        // Story Sync's normal phone bridge remains solo-only; this is read-only context.
+        if (storySync && typeof storySync.buildWitnessedSceneContext === 'function') {
+            const witnessedContext = storySync.buildWitnessedSceneContext(char);
+            if (witnessedContext) finalUserParts.push(witnessedContext);
+        }
 
         // Generation cue (user-editable via Prompt Manager — supports {{char}} macro)
         const charCueTemplate =
