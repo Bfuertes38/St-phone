@@ -38,6 +38,12 @@ It lives as a draggable, resizable panel floating over SillyTavern. Text a diffe
 
 ## Updates
 
+**v1.3.1-storysync.0**:
+* Uploaded photos can now be passed as image content to vision-capable OpenAI-compatible and Ollama phone backends.
+* Added inline photo previews and best-effort PDF/DOCX text extraction when the relevant browser libraries are available.
+* Characters can choose to send an audio note by using the hidden `[VOICE_NOTE]` directive; the text remains visible as the transcript.
+
+
 **v1.3.0-storysync.0**:
 * Added an automatic Contacts view for character cards in the active SillyTavern cast.
 * Added story-NPC discovery from roleplay scene `Present:` headers and manual NPC contact creation.
