@@ -6,7 +6,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "mattjaybe",
-    "version": "1.2.7-storysync.0",
+    "version": "1.2.8-storysync.0",
     "homePage": "https://github.com/confusion2048-cpu/SillyTavern-EchoText",
     "auto_update": true
 }
