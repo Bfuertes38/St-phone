@@ -4635,6 +4635,7 @@
             const name = String(raw || '').replace(/[\u{1F300}-\u{1FAFF}]/gu, '').trim().replace(/\s+/g, ' ');
             const normalized = name.toLowerCase();
             if (!name || name.length > 60 || known.has(normalized) || cardNames.has(normalized)
+                || normalized === String(getUserName() || '').toLowerCase()
                 || /^(none|nobody|no one|unknown|n\/a|na|user)$/i.test(name)) return;
             settings.phoneNpcContacts.push({
                 __key: phoneNpcKey(name), name: name, avatar: '',
@@ -4703,7 +4704,9 @@
             if (!key || etStoryEventLocks.has(key)) continue;
             const event = storySync.getLatestWitnessedEvent(contact.name);
             if (!event) continue;
-            const state = settings.storyEventProactiveState[key] || {};
+            const chatId = SillyTavern.getContext().getCurrentChatId ? SillyTavern.getContext().getCurrentChatId() : 'current';
+            const stateKey = String(chatId || 'current') + '|' + key;
+            const state = settings.storyEventProactiveState[stateKey] || {};
             if (state.lastEventKey === event.key) continue;
             if (state.lastSentAt && Date.now() - state.lastSentAt < cooldownMs) continue;
             const history = storySync.getHistory(key);
@@ -4727,7 +4730,7 @@
                     signal: new AbortController().signal
                 });
                 const cleaned = String(result || '').trim();
-                settings.storyEventProactiveState[key] = { lastEventKey: event.key, lastSentAt: state.lastSentAt || 0 };
+                settings.storyEventProactiveState[stateKey] = { lastEventKey: event.key, lastSentAt: state.lastSentAt || 0 };
                 if (!cleaned || /^\[NO_MESSAGE\]$/i.test(cleaned)) {
                     saveSettings();
                     continue;
@@ -4743,7 +4746,7 @@
                 };
                 const nextHistory = [...history, reply];
                 storySync.setHistory(key, nextHistory);
-                settings.storyEventProactiveState[key].lastSentAt = Date.now();
+                settings.storyEventProactiveState[stateKey].lastSentAt = Date.now();
                 saveSettings();
                 sentCount++;
                 if (panelOpen && getCharacterKey() === key) {
