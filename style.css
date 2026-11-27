@@ -12098,3 +12098,25 @@ textarea.et-mem-save-snippet-edit::placeholder {
 .et-phone-create-voice { display:inline-flex; align-items:center; gap:5px; border:1px solid var(--et-border,rgba(255,255,255,.16)); border-radius:16px; padding:5px 8px; background:rgba(255,255,255,.06); color:inherit; font-size:.72rem; cursor:pointer; }
 .et-phone-create-voice:disabled { opacity:.55; cursor:wait; }
 .et-phone-voice-loading i { animation:et-phone-record-pulse 1s infinite; }
+
+
+/* Contacts and independent NPC phone threads */
+.et-char-name-row { display:flex; align-items:center; gap:7px; }
+.et-phone-contacts-open { flex:0 0 auto; width:30px; height:30px; border:1px solid var(--et-border,rgba(255,255,255,.18)); border-radius:9px; background:rgba(255,255,255,.06); color:inherit; cursor:pointer; }
+.et-phone-contacts-modal { position:absolute; inset:0; z-index:120; display:flex; align-items:center; justify-content:center; padding:14px; background:rgba(0,0,0,.58); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+.et-phone-contacts-card { display:flex; flex-direction:column; width:min(100%,430px); max-height:88%; padding:14px; border:1px solid var(--et-border,rgba(255,255,255,.2)); border-radius:16px; background:var(--et-bg-primary,var(--SmartThemeBlurTintColor,#20202a)); color:var(--et-text,var(--SmartThemeBodyColor,#eee)); box-shadow:0 14px 45px rgba(0,0,0,.35); }
+.et-phone-contacts-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; font-size:1.05rem; }
+.et-phone-contacts-close { border:0; background:transparent; color:inherit; font-size:1.5rem; }
+#et-phone-contacts-search { width:100%; padding:10px 12px; border:1px solid var(--et-border,rgba(255,255,255,.18)); border-radius:10px; background:rgba(255,255,255,.06); color:inherit; }
+.et-phone-contacts-list { overflow:auto; min-height:60px; max-height:45vh; margin-top:8px; }
+.et-phone-contact-row { display:flex; align-items:center; gap:9px; padding:8px 2px; border-bottom:1px solid var(--et-border,rgba(255,255,255,.1)); }
+.et-phone-contact-avatar { flex:0 0 38px; width:38px; height:38px; border-radius:50%; object-fit:cover; }
+.et-phone-contact-initial { display:flex; align-items:center; justify-content:center; background:var(--et-theme-color,#667eea); color:white; font-weight:700; }
+.et-phone-contact-info { display:flex; flex:1; min-width:0; flex-direction:column; gap:2px; }
+.et-phone-contact-info strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.et-phone-contact-info small { opacity:.65; font-size:.72rem; }
+.et-phone-contact-row button,.et-phone-contacts-actions button { border:1px solid var(--et-border,rgba(255,255,255,.18)); border-radius:16px; padding:6px 10px; background:rgba(255,255,255,.07); color:inherit; font-size:.76rem; }
+.et-phone-contact-row .et-phone-contact-hide { width:28px; padding:3px; font-size:1.1rem; }
+.et-phone-contacts-empty { padding:18px 8px; text-align:center; opacity:.65; }
+.et-phone-contacts-actions { display:flex; justify-content:space-between; gap:8px; margin-top:10px; }
+.et-phone-contacts-subhead { margin-top:12px; font-size:.8rem; opacity:.7; }
