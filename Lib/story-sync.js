@@ -717,6 +717,8 @@
             jQuery('#et_ss_scenes').val(st.storySyncScenes ?? 20);
             jQuery('#et_ss_maxchars').val(st.storySyncMaxChars ?? 16000);
             jQuery('#et_ss_unknown').val('exclude');
+            jQuery('#et_ss_event_messages').prop('checked', st.storyEventProactiveEnabled !== false);
+            jQuery('#et_ss_event_cooldown').val(st.storyEventCooldownMinutes ?? 15);
             jQuery('#et_ss_step').val(st.storySyncMinutesPerMessage ?? 1);
             jQuery('#et_ss_inject').prop('checked', st.storySyncInjectPhone !== false);
             jQuery('#et_ss_inject_count').val(st.storySyncPhoneMessages ?? 30);
