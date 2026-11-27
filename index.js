@@ -1528,6 +1528,11 @@
     // ============================================================
 
     function getCurrentCharacter() {
+        // An explicitly selected standalone NPC contact takes precedence over group context.
+        if (selectedCharacterKey && String(selectedCharacterKey).startsWith('npc:')) {
+            const npc = (settings.phoneNpcContacts || []).find(contact => contact && contact.__key === selectedCharacterKey);
+            if (npc) return npc;
+        }
         // In a group session, return the active group member instead of context.characterId
         if (groupManager && groupManager.isGroupSession()) {
             const groupChar = groupManager.getActiveGroupCharacter();
