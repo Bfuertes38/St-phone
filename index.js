@@ -5302,11 +5302,11 @@
         button.disabled = true;
         button.classList.add('et-phone-voice-loading');
         try {
-            const audioPromise = new Promise((resolve, reject) => {
+            const audioPromise = new Promise(resolve => {
                 const timer = setTimeout(() => {
-                    if (etPhoneTtsPending && etPhoneTtsPending.resolve === resolve) etPhoneTtsPending = null;
-                    reject(new Error('No TTS audio was returned. Check that SillyTavern TTS is enabled and this character has a voice assigned.'));
-                }, 20000);
+                    etPhoneTtsPending = null;
+                    resolve(null);
+                }, 12000);
                 etPhoneTtsPending = {
                     charName,
                     text,
@@ -5315,6 +5315,7 @@
             });
             await executor(command, { quiet: true, source: 'echotext-phone-voice' });
             const result = await audioPromise;
+            if (!result) throw new Error('No TTS audio was returned. Enable SillyTavern TTS and assign this character a voice in its voice map.');
             const mediaId = await etStorePhoneMedia(result.audio, 'character-voice-note');
             const latestHistory = getChatHistory();
             const target = latestHistory[index];
