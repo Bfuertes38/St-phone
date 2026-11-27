@@ -1975,7 +1975,7 @@
                 return { role: 'user', content: resolveHistoryMessageText(msg) };
             }
             const speaker = msg.charName || charName;
-            return { role: 'assistant', content: `${speaker}: ${stripThinkingTags(msg.mes || '')}` };
+            return { role: 'assistant', content: `${speaker}: ${resolveHistoryMessageText(msg)}` };
         });
 
         // ── 4. Final user turn: input + persona + character card + cue ────────
@@ -2033,7 +2033,7 @@
         let rawPrompt = '';
         allHistory.forEach(msg => {
             const speaker = msg.is_user ? userName : (msg.charName || charName);
-            rawPrompt += `${speaker}: ${msg.mes}\n`;
+            rawPrompt += `${speaker}: ${resolveHistoryMessageText(msg)}\n`;
         });
         rawPrompt += `${charName}:`;
 
@@ -2811,8 +2811,8 @@
     function resolveHistoryMessageText(msg) {
         const rawText = stripThinkingTags(msg.mes || '');
         const attachmentText = etPhoneAttachmentContext(msg);
-        if (!msg.is_user && !rawText.trim() && msg.imageAttachment?.status === 'ready') return ['*[shared a photo]*', attachmentText].filter(Boolean).join('\\n');
-        return [rawText, attachmentText].filter(Boolean).join('\\n');
+        if (!msg.is_user && !rawText.trim() && msg.imageAttachment?.status === 'ready') return ['*[shared a photo]*', attachmentText].filter(Boolean).join('\n');
+        return [rawText, attachmentText].filter(Boolean).join('\n');
     }
 
     async function buildApiMessagesFromHistory(history, extraSystemMessages = [], targetCharOverride = null) {
