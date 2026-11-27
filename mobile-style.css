@@ -938,3 +938,7 @@
     padding: 7px 10px !important;
     font-size: 0.9rem !important;
 }
+/* Touch-sized phone attachment controls */
+.et-phone-tool { min-width:44px; min-height:44px; }
+.et-phone-tool-row { gap:8px; }
+.et-phone-audio-player { max-width:100%; }
