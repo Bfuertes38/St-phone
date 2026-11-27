@@ -1987,19 +1987,29 @@
         // ── 3. Prior history as attributed message turns ──────────────────────
         // Assistant turns get "[CharName]: " prefixed so the model never mistakes
         // another character's line as its own prior output.
-        const historyMessages = priorHistory.map(msg => {
+        const historyMessages = [];
+        for (const msg of priorHistory) {
             if (msg.is_user) {
-                return { role: 'user', content: resolveHistoryMessageText(msg) };
+                historyMessages.push(await etBuildPhoneApiMessage(msg, 'user'));
+            } else {
+                const speaker = msg.charName || charName;
+                const built = await etBuildPhoneApiMessage(msg, 'assistant');
+                if (Array.isArray(built.content)) {
+                    built.content.unshift({ type: 'text', text: speaker + ': ' });
+                } else {
+                    built.content = speaker + ': ' + built.content;
+                }
+                historyMessages.push(built);
             }
-            const speaker = msg.charName || charName;
-            return { role: 'assistant', content: `${speaker}: ${resolveHistoryMessageText(msg)}` };
-        });
+        }
 
         // ── 4. Final user turn: input + persona + character card + cue ────────
         const finalUserParts = [];
 
         // Latest user message
+        let latestUserApiMessage = null;
         if (latestUserMsg) {
+            latestUserApiMessage = await etBuildPhoneApiMessage(latestUserMsg, 'user');
             finalUserParts.push(resolveHistoryMessageText(latestUserMsg));
         }
 
@@ -2037,7 +2047,10 @@
         const verbosity = charKey && settings.verbosityByCharacter ? settings.verbosityByCharacter[charKey] : null;
         finalUserParts.push(getVerbosityPrompt(verbosity));
 
-        const finalUserContent = finalUserParts.filter(Boolean).join('\n\n');
+        const finalUserText = finalUserParts.filter(Boolean).join('\n\n');
+        const finalUserContent = latestUserApiMessage && Array.isArray(latestUserApiMessage.content)
+            ? [...latestUserApiMessage.content, { type: 'text', text: finalUserText.replace(resolveHistoryMessageText(latestUserMsg), '').trim() }]
+            : finalUserText;
 
         // ── Assemble ──────────────────────────────────────────────────────────
         const apiMessages = [
@@ -2840,14 +2853,11 @@
             if (msg) apiMessages.push({ role: 'system', content: msg });
         }
 
-        history.forEach(msg => {
-            // Strip thinking/reasoning tags from history messages before sending to context.
-            // This prevents internal model reasoning blocks from inflating token budgets.
-            // resolveHistoryMessageText also fills in a natural stub for silent image turns
-            // so the model never sees an empty assistant response to a photo request.
-            const contextText = resolveHistoryMessageText(msg);
-            apiMessages.push({ role: msg.is_user ? 'user' : 'assistant', content: contextText });
-        });
+        for (const msg of history) {
+            // Preserve ordinary text history while passing uploaded photos as real
+            // multimodal content to image-capable OpenAI/Ollama backends.
+            apiMessages.push(await etBuildPhoneApiMessage(msg, msg.is_user ? 'user' : 'assistant'));
+        }
 
         // --- Layer 3: Pre-fill assistant turn (anti-refusal, chat-completion backends only) ---
         // Planting the assistant prefix forces the model to continue in-character rather than
@@ -2897,12 +2907,9 @@
             if (msg) apiMessages.push({ role: 'system', content: msg });
         }
 
-        history.forEach(msg => {
-            // Apply the same silent-image-turn resolution used in buildApiMessagesFromHistory
-            // so group-member context windows also see a closed loop for image turns.
-            const contextText = resolveHistoryMessageText(msg);
-            apiMessages.push({ role: msg.is_user ? 'user' : 'assistant', content: contextText });
-        });
+        for (const msg of history) {
+            apiMessages.push(await etBuildPhoneApiMessage(msg, msg.is_user ? 'user' : 'assistant'));
+        }
 
         const charName = (char && char.name) || getCharacterName();
         const userName = getUserName();
@@ -5259,6 +5266,47 @@
         });
         return id;
     }
+
+    async function etPhoneBlobToBase64(blob) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const value = String(reader.result || '');
+                resolve(value.includes(',') ? value.slice(value.indexOf(',') + 1) : value);
+            };
+            reader.onerror = () => reject(reader.error || new Error('Could not read image attachment.'));
+            reader.readAsDataURL(blob);
+        });
+    }
+    async function etBuildPhoneApiMessage(msg, role) {
+        const text = resolveHistoryMessageText(msg);
+        const attachment = msg && msg.phoneAttachment;
+        if (!msg || !msg.is_user || !attachment || attachment.type !== 'image') {
+            return { role, content: text };
+        }
+        try {
+            const stored = await etLoadPhoneMedia(attachment.mediaId);
+            if (!stored || !stored.blob) throw new Error('Image media is missing from local storage.');
+            const base64 = await etPhoneBlobToBase64(stored.blob);
+            const mime = stored.mimeType || attachment.mimeType || 'image/jpeg';
+            if (settings.source === 'ollama') {
+                return { role, content: text, images: [base64] };
+            }
+            if (settings.source === 'openai' || settings.source === 'profile') {
+                return {
+                    role,
+                    content: [
+                        { type: 'text', text: text || 'Please look at this photo.' },
+                        { type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + base64 } }
+                    ]
+                };
+            }
+        } catch (err) {
+            console.warn('[EchoText] Could not attach image to model context:', err);
+        }
+        return { role, content: text };
+    }
+
     async function etLoadPhoneMedia(id) {
         const db = await etOpenPhoneDb();
         return new Promise((resolve, reject) => {
