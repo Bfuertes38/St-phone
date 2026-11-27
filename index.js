@@ -92,6 +92,17 @@ function getCurrentSpeakerName(eventData) {
  * Inject ONLY the currently replying character's private phone history
  * into the main chat prompt so other characters do not know about it.
  */
+function getCurrentSpeakerName(eventData = null) {
+    const ctx = getST();
+    if (typeof eventData === 'string') return eventData;
+    if (eventData?.charName) return eventData.charName;
+    if (eventData?.character?.name) return eventData.character.name;
+    if (eventData?.name && eventData.name !== ctx.name1) return eventData.name;
+    // In group chats, fail closed unless the generation event identifies its speaker.
+    if (ctx.groupId) return null;
+    return ctx.characters?.[ctx.characterId]?.name || null;
+}
+
 function syncPrivatePhoneMemoryToMainPrompt(eventData = null) {
     const ctx = getST();
     if (typeof ctx.setExtensionPrompt !== 'function') return;
@@ -235,116 +246,33 @@ Respond STRICTLY in JSON: {"send": true/false, "message": "text here or empty"}`
     }
 }
 
-// ---------- Attachments (Photo / File / Link) ----------
+// ---------- UI & Call State ----------
 
-function setPendingAttachment(att) {
-    pendingAttachment = att;
-    const preview = document.getElementById('st-phone-att-preview');
-    if (!preview) return;
-    if (!att) {
-        preview.style.display = 'none';
-        preview.innerHTML = '';
-        return;
-    }
-    preview.style.display = 'flex';
-    preview.innerHTML = `
-        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📎 ${escapeHtml(att.label)}</span>
-        <button type="button" id="st-phone-att-clear" class="st-phone-btn" style="padding:2px 6px;">✕</button>
-    `;
-    document.getElementById('st-phone-att-clear')?.addEventListener('click', () => setPendingAttachment(null));
-}
-
-async function handleFileUpload(file) {
-    if (!file) return;
-
-    if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = () => {
-            const caption = prompt('Optional description of this photo (helps non-vision models see it):', `Photo: ${file.name}`) || `Photo: ${file.name}`;
-            setPendingAttachment({
-                type: 'image',
-                label: file.name,
-                dataUrl: reader.result,
-                summary: `Sent photo (${file.name}): ${caption}`,
-            });
-        };
-        reader.readAsDataURL(file);
-        return;
-    }
-
-    // Text-based files (.txt, .md, .json, .csv, .log, etc.)
-    try {
-        const text = await file.text();
-        const snippet = text.slice(0, 2500);
-        setPendingAttachment({
-            type: 'file',
-            label: file.name,
-            fileName: file.name,
-            fileSize: file.size,
-            extractedText: snippet,
-            summary: `Sent file "${file.name}". Contents:\n${snippet}`,
-        });
-    } catch {
-        setPendingAttachment({
-            type: 'file',
-            label: file.name,
-            fileName: file.name,
-            fileSize: file.size,
-            summary: `Sent file "${file.name}" (${file.size} bytes).`,
-        });
-    }
-}
-
-function handleAttachLink() {
-    const url = prompt('Paste URL to send:');
-    if (!url || !url.trim()) return;
-    const note = prompt('Optional note about what this link shows (so the character knows what is on the page):', '') || '';
-    const cleanUrl = url.trim();
-    setPendingAttachment({
-        type: 'link',
-        label: cleanUrl,
-        url: cleanUrl,
-        note,
-        summary: `Sent link: ${cleanUrl}${note ? ` — Context: ${note}` : ''}`,
-    });
-}
-
-// ---------- Sending Messages ----------
-
-async function sendPhoneMessage() {
+function updateUnreadBadge() {
     const data = ensurePhoneData();
-    const contactId = data.activeContactId;
-    if (!contactId || !data.contacts[contactId]) return;
+    const total = Object.values(data.contacts).reduce((sum, c) => sum + (c.unread || 0), 0);
+    const badge = document.getElementById('st-phone-badge');
+    if (!badge) return;
+    badge.textContent = total;
+    badge.style.display = total > 0 ? 'flex' : 'none';
+}
 
-    const input = document.getElementById('st-phone-input');
-    const text = (input?.value || '').trim();
-    if (!text && !pendingAttachment) return;
+function renderPhoneUI() {
+    const shell = document.getElementById('st-phone-shell');
+    if (!shell) return;
 
-    const att = pendingAttachment;
-    if (input) input.value = '';
-    setPendingAttachment(null);
+    const data = ensurePhoneData();
+    const headerTitle = shell.querySelector('#st-phone-title');
+    const backBtn = shell.querySelector('#st-phone-back');
+    const callBtn = shell.querySelector('#st-phone-call-btn');
+    const addBtn = shell.querySelector('#st-phone-add-btn');
+    const body = shell.querySelector('#st-phone-body');
+    const composer = shell.querySelector('#st-phone-composer');
 
-    data.threads[contactId] = data.threads[contactId] || [];
-    data.threads[contactId].push({
-        id: crypto.randomUUID(),
-        sender: 'user',
-        type: att ? att.type : 'text',
-        content: text || (att ? `[Sent ${att.type}]` : ''),
-        meta: att ? { ...att } : undefined,
-        timestamp: Date.now(),
-    });
+    updateUnreadBadge();
 
-    await savePhoneData();
-    renderPhoneUI();
-
-    // Generate NPC reply
-    const typingEl = document.getElementById('st-phone-typing');
-    if (typingEl) typingEl.style.display = 'block';
-
-    try {
-        const reply = await generateNpcPhoneReply(contactId, att?.summary || '');
-        if (reply) {
-            data.threads[contactId].push({
-                id: crypto.randomUUID(),
-                sender: 'npc',
-   
+    if (!data.activeContactId || !data.contacts[data.activeContactId]) {
+        // Contacts View
+        headerTitle.textContent = 'Messages & Contacts';
+        backBtn.style.display = 'none';
+        callBtn.style.display
